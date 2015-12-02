@@ -1,58 +1,66 @@
 require 'mechanize'
+require 'active_support/core_ext/date'
+require 'active_support/core_ext/numeric/time'
 
 module SomdScraper
 
-  def self.events(start_date: Time.now)
-    scraper = Scraper.new(date)
+  def self.events(start_date: Date.current, end_date: Date.tomorrow)
+    scraper = Scraper.new(start_date: start_date, end_date: end_date)
     scraper.events
   end
 
   class Scraper
-    def initialize(date)
+    attr_reader :events
+    def initialize(start_date:, end_date:)
       @mechanize = Mechanize.new
       @url = "http://www.somd.com/"
-      @date = event_date(day: date.day, month: date.month, year: date.year)
+      @events = []
+
+      (start_date..end_date).each do |d|
+        @events.concat( get_events(d) )
+      end
     end
-    def events
-      page = @mechanize.get(@url + event_date)
-      page.search("div.event").map { |event| event = Event.new(event) }
+
+    def get_events(date)
+      date_string = event_date(date)
+      page = @mechanize.get(@url + date_string )
+      page.search("div.event").map { |event| event = Event.new(event, date) }
     end
 
     private 
 
-    def event_date(day: Time.now.day, month: Time.now.month, year: Time.now.year)
+    def event_date(date)
+      day = date.day
+      month = date.month
+      year = date.year
+
       "calendar/?day=#{day}&year=#{year}&month=#{month}&calendar=&view_day=on"
     end
   end
 
   class Event
-    attr_reader :title, :description, :details
-    def initialize(event)
-      @title = get_title event
-      @description = get_description event
-      @details = get_details event
-    end
+    attr_reader :title, :description, :details, :date
+    def initialize(event, date)
+      @event = event
+      @date = date
+      @title = get_title 
+      @description = get_description 
+      @details = get_details 
 
-    def start_time
-      hour = @details[:time]
-      minutes = 0
-      @start_time ||= @d
-    end
-
-    def end_time
+      remove_instance_variable(:@event)
     end
 
     private
 
-    def get_title event
-      event.at('.event-title').text.strip
+    def get_title 
+      format_string('.event-title')
     end
 
-    def get_description event
-      event.at('.event-body').text.strip
+    def get_description 
+      format_string('.event-body')
     end
-    def get_details event
-      details = event.at('.event-details').text.strip.split("\n\t\t\t")
+    def get_details 
+      details = format_string('.event-details').split("\n\t\t\t")
       parse_details details
     end
 
@@ -64,6 +72,11 @@ module SomdScraper
         details_hash[results[1].downcase.sub(' ','').to_sym] = results[2].strip
       end
       details_hash
+    end
+
+    def format_string(css_selector)
+      @event.at(css_selector).text.encode('UTF-8', 'binary', invalid: :replace,
+                                         undef: :replace, replace: '').strip
     end
   end
 end
